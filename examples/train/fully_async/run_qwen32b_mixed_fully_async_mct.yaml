@@ -1,0 +1,459 @@
+name: skyrl-qwen32b-sql-only-fully-async
+# image: mosaicml/dle:nightly-latest
+image: vllm/vllm-openai:v0.17.0
+
+scheduling:
+  priority: low
+  resumable: false
+  preemptible: true
+  max_duration: 72
+
+compute:
+  # Single-node 8xH100 layout: 4 training GPUs + 4 inference GPUs.
+  gpus: 8
+  cluster: r14z3p3
+
+env_variables:
+  UV_DEFAULT_INDEX: "https://pypi-proxy.dev.databricks.com/simple/"
+  PIP_INDEX_URL: "https://pypi-proxy.dev.databricks.com/simple/"
+  USE_PROXY_ONLY_UV_SOURCES: "true"
+
+  WANDB_API_KEY: "06d47912179062d79bdbe20e333a8a6a00fdcef2"
+  SKYRL_BRANCH: main
+  PYTHONUNBUFFERED: "1"
+  HYDRA_FULL_ERROR: "1"
+
+  MODEL: Qwen/Qwen2.5-Coder-32B-Instruct
+
+  PREPARE_DATASETS: "true"
+  FORCE_DATA_PREP: "false"
+  DOWNLOAD_SQL_DB: "true"
+
+  SQL_DATA_DIR: /mnt/data/sql
+  SQL_HF_REPO: NovaSky-AI/SkyRL-SQL-653-data-newfmt
+  OMNISQL_HF_REPO: seeklhy/OmniSQL-datasets
+
+  # SQL-only parquet inputs.
+  SQL_TRAIN_DATA: /mnt/data/sql/train.parquet
+  SQL_VAL_DATA: /mnt/data/sql/validation.parquet
+
+  # Must be reachable from every worker node.
+  SQL_DB_PATH: /mnt/data/sql/db_files/data
+
+  TRAIN_NUM_NODES: "1"
+  TRAIN_GPUS_PER_NODE: "4"
+  NUM_INFERENCE_ENGINES: "1"
+  INFERENCE_TP: "4"
+  INFERENCE_DP: "1"
+
+  MAX_STALENESS_STEPS: "4"
+  MINI_BATCH_SIZE: "64"
+  N_SAMPLES_PER_PROMPT: "4"
+  MAX_PROMPT_LENGTH: "4096"
+  MAX_INPUT_LENGTH: "24576"
+  MAX_GENERATE_LENGTH: "2048"
+  MAX_TURNS: "6"
+
+  POLICY_SEQ_PARALLEL_SIZE: "2"
+  MICRO_FORWARD_BATCH_SIZE: "1"
+  MICRO_TRAIN_BATCH_SIZE: "1"
+  LR: "1.0e-6"
+  NUM_WARMUP_STEPS: "100"
+  MAX_GRAD_NORM: "0.5"
+  KL_LOSS_COEF: "0.001"
+  TIS_TYPE: token
+  TIS_RATIO_CAP: "2.0"
+
+  GPU_MEMORY_UTILIZATION: "0.7"
+  MAX_NUM_BATCHED_TOKENS: "16384"
+  MAX_NUM_SEQS: "512"
+
+  LOGGER: wandb
+  PROJECT_NAME: sql-only-fully-async
+  RUN_NAME: qwen32b-sql-only-fully-async
+  CKPT_PATH: /mnt/checkpoints/qwen32b-sql-only-fully-async
+  EXPORT_PATH: /mnt/checkpoints/qwen32b-sql-only-fully-async/exports
+  CKPT_INTERVAL: "10"
+  HF_SAVE_INTERVAL: "100"
+  EVAL_INTERVAL: "50"
+  EVAL_BATCH_SIZE: "32"
+  EPOCHS: "1"
+
+command: |-
+  set -euxo pipefail
+  if ! command -v git >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y git
+    elif command -v microdnf >/dev/null 2>&1; then
+      microdnf install -y git
+    elif command -v yum >/dev/null 2>&1; then
+      yum install -y git
+    elif command -v apk >/dev/null 2>&1; then
+      apk add --no-cache git
+    else
+      echo "git is required but no supported package manager was found" >&2
+      exit 1
+    fi
+  fi
+  command -v uv >/dev/null 2>&1 || python3 -m pip install -U uv
+  git clone --filter=blob:none --depth 1 --branch "${SKYRL_BRANCH}" https://github.com/NovaSky-AI/SkyRL.git /workspace/SkyRL
+  cd /workspace/SkyRL
+
+  if [[ "${USE_PROXY_ONLY_UV_SOURCES}" == "true" ]]; then
+    python3 - <<'PY'
+  from pathlib import Path
+
+  pyproject = Path("pyproject.toml")
+  text = pyproject.read_text()
+
+  text = text.replace(
+      '    "flash-attn @ https://github.com/lesj0610/flash-attention/releases/download/v2.8.3-cu12-torch2.10-cp312/flash_attn-2.8.3%2Bcu12torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == \'linux\' and python_version == \'3.12\' and platform_machine == \'x86_64\'",\n',
+      "",
+  )
+  text = text.replace(
+      '    "flashinfer-python==0.6.6; sys_platform == \'linux\' and platform_machine == \'x86_64\'",\n',
+      "",
+  )
+  text = text.replace(
+      '    "flashinfer-jit-cache==0.6.6; sys_platform == \'linux\' and platform_machine == \'x86_64\'",\n',
+      "",
+  )
+  text = text.replace(
+      '    "megatron-bridge; sys_platform == \'linux\'",\n',
+      "",
+  )
+  text = text.replace(
+      '    "megatron-core==0.16.0; sys_platform == \'linux\'",\n',
+      "",
+  )
+  text = text.replace(
+      '    "nvidia-modelopt; sys_platform == \'linux\'",\n',
+      "",
+  )
+  text = text.replace(
+      '    "transformer-engine[pytorch]==2.10.0; sys_platform == \'linux\'",\n',
+      "",
+  )
+  text = text.replace(
+      'flashinfer-jit-cache = { index = "flashinfer-cu128", marker = "sys_platform == \'linux\'" }\n',
+      "",
+  )
+  text = text.replace(
+      '# Use CUDA torch on Linux, CPU torch on macOS (must match skyrl-train config)\n'
+      'torch = [\n'
+      '    { index = "pytorch-cu128", marker = "sys_platform == \'linux\'" },\n'
+      '    { index = "pytorch-cpu", marker = "sys_platform == \'darwin\'" },\n'
+      ']\n',
+      "",
+  )
+  text = text.replace(
+      'torchvision = [\n'
+      '    { index = "pytorch-cu128", marker = "sys_platform == \'linux\'" },\n'
+      '    { index = "pytorch-cpu", marker = "sys_platform == \'darwin\'" },\n'
+      ']\n',
+      "",
+  )
+  text = text.replace(
+      'megatron-bridge = {git = "https://github.com/NVIDIA-NeMo/Megatron-Bridge", rev = "02b5fccab5e5b21856d36c2e357839e0123b4b8f", marker = "sys_platform == \'linux\'"}\n',
+      "",
+  )
+  text = text.replace(
+      'harbor = { git = "https://github.com/laude-institute/harbor", rev = "8c040e1bb010201fd3c75bee3dede2407b9f57cd" }\n',
+      "",
+  )
+
+  pyproject.write_text(text)
+  Path("uv.lock").unlink(missing_ok=True)
+  PY
+  fi
+
+  python3 - <<'PY'
+  from pathlib import Path
+
+  Path("skyrl/train/dataset/dataset.py").write_text(
+      """import bisect
+  import os
+  from typing import List
+
+  import datasets
+  from loguru import logger
+  from transformers import PreTrainedTokenizerBase
+
+
+  class PromptDataset:
+      def __init__(
+          self,
+          datasets: str | List[str],
+          tokenizer: PreTrainedTokenizerBase,
+          max_prompt_length: int,
+          num_workers: int = 8,
+          prompt_key: str = "prompt",
+          env_class_key: str = "env_class",
+      ):
+          self.tokenizer = tokenizer
+          self.max_prompt_length = max_prompt_length
+          self.prompt_key = prompt_key
+          self.env_class_key = env_class_key
+          self.num_workers = num_workers
+
+          self.datasets = datasets
+          if isinstance(self.datasets, str):
+              self.datasets = [self.datasets]
+
+          self._read_files_and_tokenize()
+
+      def _load_dataset(self, source: str) -> datasets.Dataset:
+          ext = os.path.splitext(source)[-1].lower()
+          if ext == ".parquet":
+              return datasets.load_dataset("parquet", data_files=source, keep_in_memory=True)["train"]
+          if ext in [".json", ".jsonl"]:
+              return datasets.load_dataset("json", data_files=source, keep_in_memory=True)["train"]
+
+          dataset_name, has_split, split = source.partition(":")
+          try:
+              ds_dict = datasets.load_dataset(path=dataset_name, keep_in_memory=True)
+          except ValueError:
+              raise ValueError(f"Dataset `{dataset_name}` not found on Hugging Face.")
+
+          split = split if has_split else "train"
+          if split not in ds_dict:
+              raise ValueError(
+                  f"Split `{split}` not found in dataset `{dataset_name}`. "
+                  f"Configured split was `{split}` and default is `train`"
+              )
+          return ds_dict[split]
+
+      def _filter_dataset(self, ds: datasets.Dataset) -> datasets.Dataset:
+          tokenizer = self.tokenizer
+          prompt_key = self.prompt_key
+          return ds.filter(
+              lambda doc: len(
+                  tokenizer.apply_chat_template(
+                      doc[prompt_key], add_generation_prompt=True, return_dict=False, tokenize=True
+                  )
+              )
+              <= self.max_prompt_length,
+              num_proc=self.num_workers,
+              desc=f"Filtering prompts longer than {self.max_prompt_length} tokens",
+          )
+
+      def _read_files_and_tokenize(self):
+          self.dataframes: List[datasets.Dataset] = []
+          self.cumulative_sizes: List[int] = []
+          total_dataset_size = 0
+          filtered_dataset_size = 0
+
+          for source in self.datasets:
+              ds = self._load_dataset(source)
+              total_dataset_size += len(ds)
+              ds = self._filter_dataset(ds)
+              filtered_dataset_size += len(ds)
+              self.dataframes.append(ds)
+              self.cumulative_sizes.append(filtered_dataset_size)
+
+          logger.info(f"Total dataset size: {total_dataset_size}")
+          logger.info(f"Filtered dataset size: {filtered_dataset_size}")
+
+      def _get_row(self, item: int) -> dict:
+          dataset_idx = bisect.bisect_right(self.cumulative_sizes, item)
+          prev_size = 0 if dataset_idx == 0 else self.cumulative_sizes[dataset_idx - 1]
+          return dict(self.dataframes[dataset_idx][item - prev_size])
+
+      def __getitem__(self, item):
+          row_dict = self._get_row(item)
+          messages = row_dict.pop(self.prompt_key)
+          env_class = row_dict.pop(self.env_class_key, None)
+
+          extra = {key: value for key, value in row_dict.items() if key != self.prompt_key and key != self.env_class_key}
+          uid = str(item)
+
+          return messages, env_class, extra, uid
+
+      def collate_fn(self, item_list):
+          all_inputs = []
+          for prompt, env_class, env_extras, item_uids in item_list:
+              all_inputs.append({"prompt": prompt, "env_class": env_class, "env_extras": env_extras, "uid": item_uids})
+          return all_inputs
+
+      def __len__(self):
+          return self.cumulative_sizes[-1] if self.cumulative_sizes else 0
+  """
+  )
+  PY
+
+  python3 - <<'PY'
+  from pathlib import Path
+
+  path = Path("skyrl/backends/skyrl_train/workers/model_wrapper.py")
+  text = path.read_text()
+  text = text.replace(
+      "from flash_attn.bert_padding import pad_input, unpad_input\n",
+      "try:\n"
+      "    from flash_attn.bert_padding import pad_input, unpad_input\n"
+      "except Exception:\n"
+      "    pad_input = None\n"
+      "    unpad_input = None\n",
+  )
+  text = text.replace(
+      "        if use_sample_packing:\n"
+      "            assert (\n"
+      "                self.attn_implementation == \"flash_attention_2\"\n"
+      "            ), \"Flash attention 2 should be used for `use_sample_packing`\"\n",
+      "        if use_sample_packing:\n"
+      "            assert pad_input is not None and unpad_input is not None, (\n"
+      "                \"flash-attn bert_padding is required for `use_sample_packing`\"\n"
+      "            )\n"
+      "            assert (\n"
+      "                self.attn_implementation == \"flash_attention_2\"\n"
+      "            ), \"Flash attention 2 should be used for `use_sample_packing`\"\n",
+  )
+  path.write_text(text)
+  PY
+
+  : "${NUM_PARALLEL_GENERATION_WORKERS:=$(( MINI_BATCH_SIZE * (MAX_STALENESS_STEPS + 1) ))}"
+
+  mkdir -p "$SQL_DATA_DIR"
+
+  if [[ "${PREPARE_DATASETS}" == "true" ]]; then
+    if [[ "${FORCE_DATA_PREP}" == "true" || ! -f "$SQL_DATA_DIR/train.parquet" || ! -f "$SQL_DATA_DIR/validation.parquet" ]]; then
+      uv run --isolated --no-project --with huggingface_hub -- \
+        python - <<'PY'
+  import os
+  from huggingface_hub import snapshot_download
+
+  snapshot_download(
+      repo_id=os.environ["SQL_HF_REPO"],
+      repo_type="dataset",
+      local_dir=os.environ["SQL_DATA_DIR"],
+      allow_patterns=["*.parquet"],
+  )
+  PY
+    fi
+
+    if [[ "${DOWNLOAD_SQL_DB}" == "true" && ( "${FORCE_DATA_PREP}" == "true" || ! -d "$SQL_DB_PATH" ) ]]; then
+      mkdir -p "$SQL_DATA_DIR/db_files"
+      uv run --isolated --no-project --with huggingface_hub -- \
+        python - <<'PY'
+  import os
+  import zipfile
+  from huggingface_hub import hf_hub_download
+
+  db_root = os.path.join(os.environ["SQL_DATA_DIR"], "db_files")
+  zip_path = hf_hub_download(
+      repo_id=os.environ["OMNISQL_HF_REPO"],
+      filename="data.zip",
+      repo_type="dataset",
+      local_dir=db_root,
+      local_dir_use_symlinks=False,
+  )
+
+  with zipfile.ZipFile(zip_path) as zf:
+      zf.extractall(db_root)
+  PY
+    fi
+
+  fi
+
+  for data_file in "$SQL_TRAIN_DATA" "$SQL_VAL_DATA"; do
+    if [[ ! -f "$data_file" ]]; then
+      echo "Dataset file not found: $data_file" >&2
+      exit 1
+    fi
+  done
+
+  if [[ ! -d "$SQL_DB_PATH" ]]; then
+    echo "SQL_DB_PATH not found: $SQL_DB_PATH" >&2
+    exit 1
+  fi
+
+  if [[ "$LOGGER" == "wandb" && -z "${WANDB_API_KEY:-}" ]]; then
+    echo "WANDB_API_KEY must be set when LOGGER=wandb" >&2
+    exit 1
+  fi
+
+  mkdir -p "$CKPT_PATH" "$EXPORT_PATH"
+
+  echo "Model: $MODEL"
+  echo "Train data: $SQL_TRAIN_DATA"
+  echo "Val data: $SQL_VAL_DATA"
+  echo "SQL DB path: $SQL_DB_PATH"
+  echo "Flash attention enabled: false"
+  echo "Training GPUs: $(( TRAIN_NUM_NODES * TRAIN_GPUS_PER_NODE ))"
+  echo "Inference GPUs: $(( NUM_INFERENCE_ENGINES * INFERENCE_TP * INFERENCE_DP ))"
+  echo "Total GPUs needed: $(( TRAIN_NUM_NODES * TRAIN_GPUS_PER_NODE + NUM_INFERENCE_ENGINES * INFERENCE_TP * INFERENCE_DP ))"
+
+  # Keep SkyRL in an isolated env. The repo's fsdp extra pins vllm==0.18.0 and torch==2.10.0,
+  # so this job should not rely on the container's preinstalled Python package set.
+  uv run --isolated --extra fsdp -m examples.train.fully_async.main_fully_async \
+    data.train_data="['${SQL_TRAIN_DATA}']" \
+    data.val_data="['${SQL_VAL_DATA}']" \
+    trainer.fully_async.max_staleness_steps="${MAX_STALENESS_STEPS}" \
+    trainer.fully_async.num_parallel_generation_workers="${NUM_PARALLEL_GENERATION_WORKERS}" \
+    trainer.algorithm.advantage_estimator="grpo" \
+    trainer.algorithm.use_kl_loss=true \
+    trainer.algorithm.kl_loss_coef="${KL_LOSS_COEF}" \
+    trainer.algorithm.off_policy_correction.tis_ratio_type="${TIS_TYPE}" \
+    trainer.algorithm.off_policy_correction.token_tis_ratio_clip_high="${TIS_RATIO_CAP}" \
+    trainer.policy.model.path="${MODEL}" \
+    trainer.policy.optimizer_config.lr="${LR}" \
+    trainer.policy.optimizer_config.max_grad_norm="${MAX_GRAD_NORM}" \
+    trainer.policy.optimizer_config.num_warmup_steps="${NUM_WARMUP_STEPS}" \
+    trainer.placement.colocate_all=false \
+    trainer.strategy=fsdp2 \
+    trainer.placement.policy_num_nodes="${TRAIN_NUM_NODES}" \
+    trainer.placement.ref_num_nodes="${TRAIN_NUM_NODES}" \
+    trainer.placement.policy_num_gpus_per_node="${TRAIN_GPUS_PER_NODE}" \
+    trainer.placement.ref_num_gpus_per_node="${TRAIN_GPUS_PER_NODE}" \
+    trainer.policy.sequence_parallel_size="${POLICY_SEQ_PARALLEL_SIZE}" \
+    trainer.ref.sequence_parallel_size="${POLICY_SEQ_PARALLEL_SIZE}" \
+    trainer.policy.fsdp_config.cpu_offload=true \
+    trainer.ref.fsdp_config.cpu_offload=true \
+    generator.inference_engine.num_engines="${NUM_INFERENCE_ENGINES}" \
+    generator.inference_engine.tensor_parallel_size="${INFERENCE_TP}" \
+    generator.inference_engine.data_parallel_size="${INFERENCE_DP}" \
+    generator.inference_engine.backend=vllm \
+    generator.inference_engine.run_engines_locally=true \
+    generator.inference_engine.weight_sync_backend=nccl \
+    generator.inference_engine.async_engine=true \
+    generator.inference_engine.gpu_memory_utilization="${GPU_MEMORY_UTILIZATION}" \
+    generator.inference_engine.max_num_batched_tokens="${MAX_NUM_BATCHED_TOKENS}" \
+    generator.inference_engine.max_num_seqs="${MAX_NUM_SEQS}" \
+    trainer.epochs="${EPOCHS}" \
+    trainer.update_epochs_per_batch=1 \
+    trainer.train_batch_size="${MINI_BATCH_SIZE}" \
+    trainer.policy_mini_batch_size="${MINI_BATCH_SIZE}" \
+    trainer.micro_forward_batch_size_per_gpu="${MICRO_FORWARD_BATCH_SIZE}" \
+    trainer.micro_train_batch_size_per_gpu="${MICRO_TRAIN_BATCH_SIZE}" \
+    trainer.max_prompt_length="${MAX_PROMPT_LENGTH}" \
+    trainer.use_sample_packing=false \
+    trainer.flash_attn=false \
+    generator.max_input_length="${MAX_INPUT_LENGTH}" \
+    generator.sampling_params.max_generate_length="${MAX_GENERATE_LENGTH}" \
+    generator.sampling_params.temperature=1.0 \
+    generator.sampling_params.top_p=1.0 \
+    generator.sampling_params.stop='["</sql>", "</solution>"]' \
+    generator.eval_sampling_params.temperature=0.0 \
+    generator.eval_sampling_params.top_p=1.0 \
+    generator.eval_sampling_params.max_generate_length="${MAX_GENERATE_LENGTH}" \
+    generator.eval_sampling_params.stop='["</sql>", "</solution>"]' \
+    generator.batched=false \
+    generator.n_samples_per_prompt="${N_SAMPLES_PER_PROMPT}" \
+    generator.max_turns="${MAX_TURNS}" \
+    generator.use_conversation_multi_turn=false \
+    environment.env_class=text2sql \
+    environment.skyrl_gym.max_env_workers=128 \
+    environment.skyrl_gym.text2sql.db_path="${SQL_DB_PATH}" \
+    trainer.logger="${LOGGER}" \
+    trainer.project_name="${PROJECT_NAME}" \
+    trainer.run_name="${RUN_NAME}" \
+    trainer.resume_mode=latest \
+    trainer.ckpt_path="${CKPT_PATH}" \
+    trainer.export_path="${EXPORT_PATH}" \
+    trainer.ckpt_interval="${CKPT_INTERVAL}" \
+    trainer.hf_save_interval="${HF_SAVE_INTERVAL}" \
+    trainer.max_ckpts_to_keep=5 \
+    trainer.eval_batch_size="${EVAL_BATCH_SIZE}" \
+    trainer.eval_before_train=false \
+    trainer.eval_interval="${EVAL_INTERVAL}"
