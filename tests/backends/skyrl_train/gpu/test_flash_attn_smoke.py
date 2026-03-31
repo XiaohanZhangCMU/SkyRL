@@ -69,3 +69,5 @@ def test_flash_attn_bert_padding_round_trip():
     assert cu_seqlens.tolist() == [0, 3, 7]
     assert max_seqlen == 4
     assert torch.equal(restored[attention_mask.bool()], values[attention_mask.bool()])
+
+test_flash_attn_bert_padding_round_trip()
