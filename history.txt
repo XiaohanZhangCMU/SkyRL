@@ -1,0 +1,10 @@
+   10  apt-get update 
+   11  apt-get install vim 
+   14  pip install uv 
+   17  export UV_DEFAULT_INDEX="https://pypi-proxy.dev.databricks.com/simple/"
+   18  export PIP_INDEX_URL="https://pypi-proxy.dev.databricks.com/simple/"
+   88  uv run examples/train/gsm8k/gsm8k_dataset.py --output_dir $HOME/data/gsm8k
+   91  export WANDB_API_KEY="06d47912179062d79bdbe20e333a8a6a00fdcef2"
+  118  apt-get update && apt-get install -y build-essential libnuma-dev
+  119  ray stop
+  133  uv pip install vllm 
