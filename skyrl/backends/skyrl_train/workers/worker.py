@@ -198,20 +198,28 @@ class DistributedTorchRayActor:
             ]
 
         try:
-            LIBNUMA = CDLL(find_library("numa"))
+            libnuma_path = find_library("numa")
+            if not libnuma_path:
+                raise OSError("find_library('numa') returned no result")
+            LIBNUMA = CDLL(libnuma_path)
         except Exception as e:
             logger.error(f"Skipping NUMA affinity setup because libnuma is not installed: {e}")
             _SET_AFFINITY = True
             return
 
-        LIBNUMA.numa_parse_nodestring.argtypes = [c_char_p]
-        LIBNUMA.numa_parse_nodestring.restype = POINTER(bitmask_t)
-        LIBNUMA.numa_run_on_node_mask.argtypes = [POINTER(bitmask_t)]
-        LIBNUMA.numa_run_on_node_mask.restype = c_int
-        LIBNUMA.numa_set_membind.argtypes = [POINTER(bitmask_t)]
-        LIBNUMA.numa_set_membind.restype = c_void_p
-        LIBNUMA.numa_num_configured_nodes.argtypes = []
-        LIBNUMA.numa_num_configured_nodes.restype = c_int
+        try:
+            LIBNUMA.numa_parse_nodestring.argtypes = [c_char_p]
+            LIBNUMA.numa_parse_nodestring.restype = POINTER(bitmask_t)
+            LIBNUMA.numa_run_on_node_mask.argtypes = [POINTER(bitmask_t)]
+            LIBNUMA.numa_run_on_node_mask.restype = c_int
+            LIBNUMA.numa_set_membind.argtypes = [POINTER(bitmask_t)]
+            LIBNUMA.numa_set_membind.restype = c_void_p
+            LIBNUMA.numa_num_configured_nodes.argtypes = []
+            LIBNUMA.numa_num_configured_nodes.restype = c_int
+        except AttributeError as e:
+            logger.error(f"Skipping NUMA affinity setup because libnuma is missing required symbols: {e}")
+            _SET_AFFINITY = True
+            return
 
         def numa_bind(nid: int):
             bitmask = LIBNUMA.numa_parse_nodestring(bytes(str(nid), "ascii"))
