@@ -88,8 +88,8 @@ skyrl-train = [
     "skyrl-gym",
     # TODO (aaron): Once PyTorch 2.10 is officially supported (stable PyPI torch + matching
     # flash-attn wheels), drop the custom wheel URL
-    # "flash-attn @ https://github.com/lesj0610/flash-attention/releases/download/v2.8.3-cu12-torch2.10-cp312/flash_attn-2.8.3%2Bcu12torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and python_version == '3.12' and platform_machine == 'x86_64'",
-    "flash-attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and python_version == '3.12' and platform_machine == 'x86_64'",
+     "flash-attn @ https://github.com/lesj0610/flash-attention/releases/download/v2.8.3-cu12-torch2.10-cp312/flash_attn-2.8.3%2Bcu12torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and python_version == '3.12' and platform_machine == 'x86_64'",
+    #"flash-attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and python_version == '3.12' and platform_machine == 'x86_64'",
     # "flash-attn==2.8.3; sys_platform == 'linux' and (python_version != '3.12' or platform_machine != 'x86_64')",
     "polars",
     "s3fs",
@@ -107,8 +107,8 @@ fsdp = [
     # Torch is expected to be provided by the cluster base environment.
     # TODO (aaron): Once PyTorch 2.10 is officially supported (stable PyPI torch + matching
     # flash-attn wheels), drop the custom wheel URL
-    "flash-attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and python_version == '3.12' and platform_machine == 'x86_64'",
-    #"flash-attn @ https://github.com/lesj0610/flash-attention/releases/download/v2.8.3-cu12-torch2.10-cp312/flash_attn-2.8.3%2Bcu12torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and python_version == '3.12' and platform_machine == 'x86_64'",
+    #"flash-attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and python_version == '3.12' and platform_machine == 'x86_64'",
+    "flash-attn @ https://github.com/lesj0610/flash-attention/releases/download/v2.8.3-cu12-torch2.10-cp312/flash_attn-2.8.3%2Bcu12torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and python_version == '3.12' and platform_machine == 'x86_64'",
     #"flash-attn==2.8.3; sys_platform == 'linux' and (python_version != '3.12' or platform_machine != 'x86_64')",
 ]
 
@@ -118,8 +118,8 @@ megatron = [
     # Torch is expected to be provided by the cluster base environment.
     # TODO (aaron): Once PyTorch 2.10 is officially supported (stable PyPI torch + matching
     # flash-attn wheels), drop the custom wheel URL
-    #"flash-attn @ https://github.com/lesj0610/flash-attention/releases/download/v2.8.3-cu12-torch2.10-cp312/flash_attn-2.8.3%2Bcu12torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and python_version == '3.12' and platform_machine == 'x86_64'",
-    "flash-attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and python_version == '3.12' and platform_machine == 'x86_64'",
+    "flash-attn @ https://github.com/lesj0610/flash-attention/releases/download/v2.8.3-cu12-torch2.10-cp312/flash_attn-2.8.3%2Bcu12torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and python_version == '3.12' and platform_machine == 'x86_64'",
+    #"flash-attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux' and python_version == '3.12' and platform_machine == 'x86_64'",
     #"flash-attn==2.8.3; sys_platform == 'linux' and (python_version != '3.12' or platform_machine != 'x86_64')",
     "vllm==0.18.0; sys_platform == 'linux'",
     "vllm-router; sys_platform == 'linux'",
