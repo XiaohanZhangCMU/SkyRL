@@ -3,18 +3,41 @@ Minimal flash-attn smoke tests.
 
 Run with:
 uv run --extra dev --extra fsdp pytest -q tests/backends/skyrl_train/gpu/test_flash_attn_smoke.py
+uv run --extra dev --extra fsdp python tests/backends/skyrl_train/gpu/test_flash_attn_smoke.py
 """
 
+import importlib
 import math
 
 import pytest
 
 
+def _fail(message: str) -> None:
+    raise RuntimeError(message)
+
+
 def _require_flash_attn():
-    torch = pytest.importorskip("torch")
-    flash_attn = pytest.importorskip("flash_attn")
+    try:
+        import torch
+    except ImportError as exc:
+        _fail(f"torch import failed: {exc}")
+
     if not torch.cuda.is_available():
         pytest.skip("flash-attn smoke test requires CUDA")
+
+    try:
+        flash_attn = importlib.import_module("flash_attn")
+    except ImportError as exc:
+        compiled_with_cxx11_abi = getattr(torch, "compiled_with_cxx11_abi", None)
+        cxx11_abi = compiled_with_cxx11_abi() if callable(compiled_with_cxx11_abi) else "unknown"
+        _fail(
+            "flash_attn import failed. This usually means the wheel does not match the installed "
+            f"PyTorch/CUDA ABI.\n"
+            f"torch={torch.__version__}\n"
+            f"torch.cuda={getattr(torch.version, 'cuda', 'unknown')}\n"
+            f"torch.cxx11_abi={cxx11_abi}\n"
+            f"original error: {exc}"
+        )
 
     from flash_attn import flash_attn_func
     from flash_attn.bert_padding import pad_input, unpad_input
@@ -70,4 +93,19 @@ def test_flash_attn_bert_padding_round_trip():
     assert max_seqlen == 4
     assert torch.equal(restored[attention_mask.bool()], values[attention_mask.bool()])
 
-test_flash_attn_bert_padding_round_trip()
+
+def main():
+    test_flash_attn_cuda_forward_matches_reference()
+    test_flash_attn_bert_padding_round_trip()
+    print("flash-attn smoke test passed")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except pytest.skip.Exception as exc:
+        print(f"SKIPPED: {exc}")
+        raise SystemExit(0) from exc
+    except Exception as exc:
+        print(f"FAILED: {exc}")
+        raise SystemExit(1) from exc
